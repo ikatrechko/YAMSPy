@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yamspy"
+version = "0.3.3"
+authors = [
+  { email = "input.gary@gmail.com" },
+]
+description = "Yet Another Implementation of Multiwii Serial Protocol."
+readme = "README.md"
+license = { text = "GPL-3.0-only" }
+requires-python = ">=3.7"
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python",
+]
+
+keywords = [
+    "Betaflight", "iNAV", "drone", "UAV",
+    "Multi Wii Serial Protocol", "MSP"
+]
+
+dependencies = [
+    "pyserial",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/ikatrechko/YAMSPy"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["yamspy*"]
+exclude = ["examples"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

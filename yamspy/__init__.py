@@ -1,53 +1,9 @@
-"""YAMSPy: Yet Another Implementation of Multiwii Serial Protocol Python Interface for Betaflight, iNAV, etc.
-
-Copyright (C) 2019 Ricardo de Azambuja
-
-This file is part of YAMSPy.
-
-YAMSPy is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-YAMSPy is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with YAMSPy.  If not, see <https://www.gnu.org/licenses/>.
-
-Deeply based on code from Betaflight and iNAV.
-
-Acknowledgement:
-This work was possible thanks to the financial support from IVADO.ca (postdoctoral scholarship 2019/2020).
-
-Disclaimer (adapted from Wikipedia):
-None of the authors, contributors, supervisors, administrators, employers, friends, family, vandals, or anyone else 
-connected (or not) with this project, in any way whatsoever, can be made responsible for your use of the information (code) 
-contained or linked from here.
-
-TODO:
-1) Add more support to iNAV.
-2) Add the possibility to register a callback functions when a msg is transmitted.
-3) Improve the arming confirmation.
-4) This file is way too big... it needs to be broken down into smaller ones.
-"""
-
-__author__ = "Ricardo de Azambuja"
-__copyright__ = "Copyright 2019, MISTLab.ca"
-__credits__ = [""]
-__license__ = "GPL"
-__version__ = "0.3.3"
-__maintainer__ = "Ricardo de Azambuja"
-__email__ = "ricardo.azambuja@gmail.com"
-__status__ = "Development"
-
 import logging
 import struct
 import time
 import sys
 from threading import Lock
+from . import utils
 
 if "linux" in sys.platform:
     import ctypes
@@ -1261,13 +1217,13 @@ class MSPy:
                                 break # sends it to the error state
                         elif dataHandler['msp_version'] == 2:
                             dataHandler['message_checksum'] = 0
-                            dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], 0) # flag
-                            dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['code'] & 0xFF) # code LOW
-                            dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], (dataHandler['code'] & 0xFF00) >> 8) # code HIGH
-                            dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['message_length_expected'] & 0xFF) #  HIGH
-                            dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], (dataHandler['message_length_expected'] & 0xFF00) >> 8) #  HIGH
+                            dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], 0) # flag
+                            dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['code'] & 0xFF) # code LOW
+                            dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], (dataHandler['code'] & 0xFF00) >> 8) # code HIGH
+                            dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['message_length_expected'] & 0xFF) #  HIGH
+                            dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], (dataHandler['message_length_expected'] & 0xFF00) >> 8) #  HIGH
                             for si in range(dataHandler['message_length_received']):
-                                dataHandler['message_checksum'] = self._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['message_buffer'][si])
+                                dataHandler['message_checksum'] = utils._crc8_dvb_s2(dataHandler['message_checksum'], dataHandler['message_buffer'][si])
                             if dataHandler['message_checksum'] == data:
                                 # checksum is correct, message received, store dataview
                                 logging.debug("Message received (length {1}) - Code {0}".format(dataHandler['code'], dataHandler['message_length_received']))
@@ -1288,49 +1244,6 @@ class MSPy:
             return dataHandler
 
 
-    @staticmethod
-    def readbytes(data, size=8, unsigned=False, read_as_float=False):
-        """Unpack bytes according to size / type
-
-        Parameters
-        ----------
-        data : bytearray
-            Data to be unpacked
-        size : int, optional
-            Number of bits (8, 16 or 32) (default is 8)
-        unsigned : bool, optional
-            Indicates if data is unsigned or not (default is False)
-        read_as_float: bool, optional
-            Indicates if data is read as float or not (default is False)
-            
-        Returns
-        -------
-        int
-            unpacked bytes according to input options
-        """
-        buffer = bytearray()
-
-        for _ in range(int(size/8)):
-            buffer.append(data.pop(0))
-        
-        if size==8:
-            unpack_format = 'b'
-        elif size==16:
-            if read_as_float: # for special situations like MSP2_INAV_DEBUG
-                unpack_format = 'e'
-            else:   
-                unpack_format = 'h'
-        elif size==32:
-            if read_as_float: # for special situations like MSP2_INAV_DEBUG
-                unpack_format = 'f'
-            else:
-                unpack_format = 'i'
-        
-        if unsigned:
-            unpack_format = unpack_format.upper()
-
-        return struct.unpack('<' + unpack_format, buffer)[0]
-
 
     def process_armingDisableFlags(self, flags):
         result = []
@@ -1349,15 +1262,11 @@ class MSPy:
         """
         result = []
         for i in range(len(self.AUX_CONFIG)):
-            if (self.bit_check(flag, i)):
+            if (utils.bit_check(flag, i)):
                 result.append(self.AUX_CONFIG[i])
 
         return result
 
-
-    @staticmethod
-    def bit_check(mask, bit):
-        return ((mask>>bit)%2) != 0
 
 
     def serialPortFunctionMaskToFunctions(self, functionMask):
@@ -1366,33 +1275,10 @@ class MSPy:
         keys = self.SERIAL_PORT_FUNCTIONS.keys()
         for key in keys:
             bit = self.SERIAL_PORT_FUNCTIONS[key]
-            if (self.bit_check(functionMask, bit)):
+            if (utils.bit_check(functionMask, bit)):
                 functions.append(key)
         return functions
 
-
-    @staticmethod
-    def convert(val_list, n=16): 
-        """Convert to n*bits (8 multiple) list
-
-        Parameters
-        ----------
-        val_list : list
-            List with values to be converted
-        
-        n: int, optional
-            Number of bits (multiple of 8) (default is 16)
-            
-        Returns
-        -------
-        list
-            List where each item is the equivalent byte value
-        """ 
-        buffer = []
-        for val in val_list:
-            for i in range(int(n/8)): 
-                buffer.append((int(val)>>i*8) & 255) 
-        return buffer 
 
     def save2eprom(self):
         logging.info("Save to EPROM requested") # some configs also need reboot to be applied (not online).
@@ -1424,7 +1310,7 @@ class MSPy:
     def set_FEATURE_CONFIG(self, mask):
         assert(type(mask)==int)
 
-        data = self.convert([mask], 32)
+        data = utils.convert([mask], 32)
         return self.send_RAW_msg(MSPy.MSPCodes['MSP_SET_FEATURE_CONFIG'], data)
 
 
@@ -1432,7 +1318,7 @@ class MSPy:
         assert(type(data)==list)
         assert(len(data)==8)
 
-        data = self.convert(data, 16) # any values bigger than 255 need to be converted.
+        data = utils.convert(data, 16) # any values bigger than 255 need to be converted.
                                       # RC and Motor commands go from 0 to 2000.
 
         return self.send_RAW_msg(MSPy.MSPCodes['MSP_SET_MOTOR'], data)
@@ -1448,7 +1334,7 @@ class MSPy:
 
         Considering RC_MAP==[0, 1, 3, 2, 4, 5, 6, 7]
         """
-        data = self.convert(data, 16) # any values bigger than 255 need to be converted.
+        data = utils.convert(data, 16) # any values bigger than 255 need to be converted.
                                       # RC and Motor commands go from 0 to 2000.
 
         return self.send_RAW_msg(MSPy.MSPCodes['MSP_SET_RAW_RC'], data)
@@ -1512,7 +1398,7 @@ class MSPy:
             for di in range(len_data):
                 bufView[8+di] = data[di]
             for si in range(3, size-1):
-                checksum = self._crc8_dvb_s2(checksum, bufView[si])
+                checksum = utils._crc8_dvb_s2(checksum, bufView[si])
             bufView[-1] = checksum
 
         if self.serial_port_write_lock.acquire(blocking, timeout):
@@ -1524,19 +1410,6 @@ class MSPy:
                     logging.debug("RAW message sent: {}".format(bufView))
 
                 return res
-    
-    @staticmethod
-    def _crc8_dvb_s2(crc, ch):
-        """CRC for MSPV2
-        *copied from inav-configurator
-        """
-        crc ^= ch
-        for _ in range(8):
-            if (crc & 0x80):
-                crc = ((crc << 1) & 0xFF) ^ 0xD5
-            else:
-                crc = (crc << 1) & 0xFF
-        return crc
 
     def process_recv_data(self, dataHandler):
         """Process the dataHandler from receive_msg consuming (pop!) dataHandler['dataView'] as it goes.
@@ -1586,182 +1459,182 @@ class MSPy:
         
 
     def process_MSP_STATUS(self, data):
-        self.CONFIG['cycleTime'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['i2cError'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['activeSensors'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['mode'] = self.readbytes(data, size=32, unsigned=True)
-        self.CONFIG['profile'] = self.readbytes(data, size=8, unsigned=True)
+        self.CONFIG['cycleTime'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['i2cError'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['activeSensors'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['mode'] = utils.readbytes(data, size=32, unsigned=True)
+        self.CONFIG['profile'] = utils.readbytes(data, size=8, unsigned=True)
         
     def process_MSP_STATUS_EX(self, data):
-        self.CONFIG['cycleTime'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['i2cError'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['activeSensors'] = self.readbytes(data, size=16, unsigned=True)
-        self.CONFIG['mode'] = self.readbytes(data, size=32, unsigned=True)
+        self.CONFIG['cycleTime'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['i2cError'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['activeSensors'] = utils.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['mode'] = utils.readbytes(data, size=32, unsigned=True)
 
-        self.CONFIG['profile'] = self.readbytes(data, size=8, unsigned=True)
-        self.CONFIG['cpuload'] = self.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['profile'] = utils.readbytes(data, size=8, unsigned=True)
+        self.CONFIG['cpuload'] = utils.readbytes(data, size=16, unsigned=True)
         
         if not self.INAV:
-            self.CONFIG['numProfiles'] = self.readbytes(data, size=8, unsigned=True)
-            self.CONFIG['rateProfile'] = self.readbytes(data, size=8, unsigned=True)
+            self.CONFIG['numProfiles'] = utils.readbytes(data, size=8, unsigned=True)
+            self.CONFIG['rateProfile'] = utils.readbytes(data, size=8, unsigned=True)
 
             # Read flight mode flags
-            byteCount = self.readbytes(data, size=8, unsigned=True)
+            byteCount = utils.readbytes(data, size=8, unsigned=True)
             self.CONFIG['flightModeFlags'] = [] # this was not implemented on betaflight-configurator
             for _ in range(byteCount):
                 # betaflight-configurator would just discard these bytes
-                self.CONFIG['flightModeFlags'].append(self.readbytes(data, size=8, unsigned=True))
+                self.CONFIG['flightModeFlags'].append(utils.readbytes(data, size=8, unsigned=True))
 
             # Read arming disable flags
-            self.CONFIG['armingDisableCount'] = self.readbytes(data, size=8, unsigned=True) # Flag count
-            self.CONFIG['armingDisableFlags'] = self.readbytes(data, size=32, unsigned=True)
+            self.CONFIG['armingDisableCount'] = utils.readbytes(data, size=8, unsigned=True) # Flag count
+            self.CONFIG['armingDisableFlags'] = utils.readbytes(data, size=32, unsigned=True)
         else:
-            self.CONFIG['armingDisableFlags'] = self.readbytes(data, size=16, unsigned=True)
+            self.CONFIG['armingDisableFlags'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_RAW_IMU(self, data):
         # /512 for mpu6050, /256 for mma
         # currently we are unable to differentiate between the sensor types, so we are going with 512
         # And what about SENSOR_CONFIG???
-        self.SENSOR_DATA['accelerometer'][0] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['accelerometer'][1] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['accelerometer'][2] = self.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['accelerometer'][0] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['accelerometer'][1] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['accelerometer'][2] = utils.readbytes(data, size=16, unsigned=False)
 
         # properly scaled (INAV and BF use the same * (4 / 16.4))
         # but this is supposed to be RAW, so raw it is!
-        self.SENSOR_DATA['gyroscope'][0] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['gyroscope'][1] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['gyroscope'][2] = self.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['gyroscope'][0] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['gyroscope'][1] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['gyroscope'][2] = utils.readbytes(data, size=16, unsigned=False)
 
         # no clue about scaling factor (/1090), so raw
-        self.SENSOR_DATA['magnetometer'][0] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['magnetometer'][1] = self.readbytes(data, size=16, unsigned=False)
-        self.SENSOR_DATA['magnetometer'][2] = self.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['magnetometer'][0] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['magnetometer'][1] = utils.readbytes(data, size=16, unsigned=False)
+        self.SENSOR_DATA['magnetometer'][2] = utils.readbytes(data, size=16, unsigned=False)
 
     def process_MSP_SERVO(self, data):
         servoCount = int(len(data) / 2)
-        self.SERVO_DATA = [self.readbytes(data, size=16, unsigned=True) for _ in range(servoCount)]
+        self.SERVO_DATA = [utils.readbytes(data, size=16, unsigned=True) for _ in range(servoCount)]
 
     def process_MSP_MOTOR(self, data):
         motorCount = int(len(data) / 2)
-        self.MOTOR_DATA = [self.readbytes(data, size=16, unsigned=True) for i in range(motorCount)]
+        self.MOTOR_DATA = [utils.readbytes(data, size=16, unsigned=True) for i in range(motorCount)]
 
     def process_MSP_RC(self, data):
         n_channels = int(len(data) / 2)
         self.RC['active_channels'] = n_channels
-        self.RC['channels'] = [self.readbytes(data, size=16, unsigned=True) for i in range(n_channels)]
+        self.RC['channels'] = [utils.readbytes(data, size=16, unsigned=True) for i in range(n_channels)]
 
     def process_MSP_RAW_GPS(self, data):
-        self.GPS_DATA['fix'] = self.readbytes(data, size=8, unsigned=True)
-        self.GPS_DATA['numSat'] = self.readbytes(data, size=8, unsigned=True)
-        self.GPS_DATA['lat'] = self.readbytes(data, size=32, unsigned=False)
-        self.GPS_DATA['lon'] = self.readbytes(data, size=32, unsigned=False)
-        self.GPS_DATA['alt'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['speed'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['ground_course'] = self.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['fix'] = utils.readbytes(data, size=8, unsigned=True)
+        self.GPS_DATA['numSat'] = utils.readbytes(data, size=8, unsigned=True)
+        self.GPS_DATA['lat'] = utils.readbytes(data, size=32, unsigned=False)
+        self.GPS_DATA['lon'] = utils.readbytes(data, size=32, unsigned=False)
+        self.GPS_DATA['alt'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['speed'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['ground_course'] = utils.readbytes(data, size=16, unsigned=True)
 
         if self.INAV:
-            self.GPS_DATA['hdop'] = self.readbytes(data, size=16, unsigned=True)
+            self.GPS_DATA['hdop'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_COMP_GPS(self, data):
-        self.GPS_DATA['distanceToHome'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['directionToHome'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['update'] = self.readbytes(data, size=8, unsigned=True)
+        self.GPS_DATA['distanceToHome'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['directionToHome'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['update'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_GPSSTATISTICS(self, data):
-        self.GPS_DATA['messageDt'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['errors'] = self.readbytes(data, size=32, unsigned=True)
-        self.GPS_DATA['timeouts'] = self.readbytes(data, size=32, unsigned=True)
-        self.GPS_DATA['packetCount'] = self.readbytes(data, size=32, unsigned=True)
-        self.GPS_DATA['hdop'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['eph'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_DATA['epv'] = self.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['messageDt'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['errors'] = utils.readbytes(data, size=32, unsigned=True)
+        self.GPS_DATA['timeouts'] = utils.readbytes(data, size=32, unsigned=True)
+        self.GPS_DATA['packetCount'] = utils.readbytes(data, size=32, unsigned=True)
+        self.GPS_DATA['hdop'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['eph'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_DATA['epv'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_ATTITUDE(self, data):
-        self.SENSOR_DATA['kinematics'][0] = self.readbytes(data, size=16, unsigned=False) / 10.0 # x
-        self.SENSOR_DATA['kinematics'][1] = self.readbytes(data, size=16, unsigned=False) / 10.0 # y
-        self.SENSOR_DATA['kinematics'][2] = self.readbytes(data, size=16, unsigned=False) # z
+        self.SENSOR_DATA['kinematics'][0] = utils.readbytes(data, size=16, unsigned=False) / 10.0 # x
+        self.SENSOR_DATA['kinematics'][1] = utils.readbytes(data, size=16, unsigned=False) / 10.0 # y
+        self.SENSOR_DATA['kinematics'][2] = utils.readbytes(data, size=16, unsigned=False) # z
 
     def process_MSP_ALTITUDE(self, data):
-        self.SENSOR_DATA['altitude'] = round((self.readbytes(data, size=32, unsigned=False) / 100.0), 2) # correct scale factor
+        self.SENSOR_DATA['altitude'] = round((utils.readbytes(data, size=32, unsigned=False) / 100.0), 2) # correct scale factor
 
     def process_MSP_SONAR(self, data):
-        self.SENSOR_DATA['sonar'] = self.readbytes(data, size=32, unsigned=False)
+        self.SENSOR_DATA['sonar'] = utils.readbytes(data, size=32, unsigned=False)
 
     def process_MSP_ANALOG(self, data):
-        self.ANALOG['voltage'] = self.readbytes(data, size=8, unsigned=True) / 10.0
-        self.ANALOG['mAhdrawn'] = self.readbytes(data, size=16, unsigned=True)
-        self.ANALOG['rssi'] = self.readbytes(data, size=16, unsigned=True) # 0-1023
-        self.ANALOG['amperage'] = self.readbytes(data, size=16, unsigned=False) / 100 # A
+        self.ANALOG['voltage'] = utils.readbytes(data, size=8, unsigned=True) / 10.0
+        self.ANALOG['mAhdrawn'] = utils.readbytes(data, size=16, unsigned=True)
+        self.ANALOG['rssi'] = utils.readbytes(data, size=16, unsigned=True) # 0-1023
+        self.ANALOG['amperage'] = utils.readbytes(data, size=16, unsigned=False) / 100 # A
         self.ANALOG['last_received_timestamp'] = int(time.time()) # why not monotonic? where is time synchronized?
         if not self.INAV:
-            self.ANALOG['voltage'] = self.readbytes(data, size=16, unsigned=True) / 100
+            self.ANALOG['voltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
     
     def process_MSPV2_INAV_ANALOG(self, data):
         if self.INAV:
-            tmp = self.readbytes(data, size=8, unsigned=True)
+            tmp = utils.readbytes(data, size=8, unsigned=True)
             self.ANALOG['battery_full_when_plugged_in'] = True if (tmp & 1) else False
             self.ANALOG['use_capacity_thresholds'] = True if ((tmp & 2) >> 1) else False
             self.ANALOG['battery_state'] = (tmp & 12) >> 2
             self.ANALOG['cell_count'] = (tmp & 0xF0) >> 4
 
-            self.ANALOG['voltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-            self.ANALOG['amperage'] = self.readbytes(data, size=16, unsigned=True) / 100 # A
-            self.ANALOG['power'] = self.readbytes(data, size=32, unsigned=True) / 100
-            self.ANALOG['mAhdrawn'] = self.readbytes(data, size=32, unsigned=True)
-            self.ANALOG['mWhdrawn'] = self.readbytes(data, size=32, unsigned=True)
-            self.ANALOG['battery_remaining_capacity'] = self.readbytes(data, size=32, unsigned=True)
-            self.ANALOG['battery_percentage'] = self.readbytes(data, size=8, unsigned=True)
-            self.ANALOG['rssi'] = self.readbytes(data, size=16, unsigned=True) # 0-1023
+            self.ANALOG['voltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+            self.ANALOG['amperage'] = utils.readbytes(data, size=16, unsigned=True) / 100 # A
+            self.ANALOG['power'] = utils.readbytes(data, size=32, unsigned=True) / 100
+            self.ANALOG['mAhdrawn'] = utils.readbytes(data, size=32, unsigned=True)
+            self.ANALOG['mWhdrawn'] = utils.readbytes(data, size=32, unsigned=True)
+            self.ANALOG['battery_remaining_capacity'] = utils.readbytes(data, size=32, unsigned=True)
+            self.ANALOG['battery_percentage'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ANALOG['rssi'] = utils.readbytes(data, size=16, unsigned=True) # 0-1023
 
             # TODO: update both BF and INAV variables
             self.BATTERY_STATE['cellCount'] = self.ANALOG['cell_count']
 
     def process_MSP_VOLTAGE_METERS(self, data):
         total_bytes_per_meter = (8+8)/8 # just to make it clear where it comes from...
-        self.VOLTAGE_METERS = [{'id':self.readbytes(data, size=8, unsigned=True),
-                                'voltage':self.readbytes(data, size=8, unsigned=True) / 10.0
+        self.VOLTAGE_METERS = [{'id':utils.readbytes(data, size=8, unsigned=True),
+                                'voltage':utils.readbytes(data, size=8, unsigned=True) / 10.0
                                 } for _ in range(int(len(data) / total_bytes_per_meter))]
 
     def process_MSP_CURRENT_METERS(self, data):
         total_bytes_per_meter = (8+16+16)/8 # just to make it clear where it comes from...
-        self.CURRENT_METERS = [{'id':self.readbytes(data, size=8, unsigned=True),
-                                'mAhDrawn':self.readbytes(data, size=16, unsigned=True), # mAh
-                                'amperage':self.readbytes(data, size=16, unsigned=True) / 1000 # A
+        self.CURRENT_METERS = [{'id':utils.readbytes(data, size=8, unsigned=True),
+                                'mAhDrawn':utils.readbytes(data, size=16, unsigned=True), # mAh
+                                'amperage':utils.readbytes(data, size=16, unsigned=True) / 1000 # A
                                 } for _ in range(int(len(data) / total_bytes_per_meter))]
 
     def process_MSP_BATTERY_STATE(self, data):
-        self.BATTERY_STATE['cellCount'] = self.readbytes(data, size=8, unsigned=True)
-        self.BATTERY_STATE['capacity'] = self.readbytes(data, size=16, unsigned=True) # mAh
+        self.BATTERY_STATE['cellCount'] = utils.readbytes(data, size=8, unsigned=True)
+        self.BATTERY_STATE['capacity'] = utils.readbytes(data, size=16, unsigned=True) # mAh
         # BATTERY_STATE.voltage = data.readU8() / 10.0; // V
-        self.BATTERY_STATE['mAhDrawn'] = self.readbytes(data, size=16, unsigned=True) # mAh
-        self.BATTERY_STATE['amperage'] = self.readbytes(data, size=16, unsigned=True) / 100 # A
-        self.BATTERY_STATE['batteryState'] = self.readbytes(data, size=8, unsigned=True)
-        self.BATTERY_STATE['voltage'] = self.readbytes(data, size=16, unsigned=True) / 100 # V
+        self.BATTERY_STATE['mAhDrawn'] = utils.readbytes(data, size=16, unsigned=True) # mAh
+        self.BATTERY_STATE['amperage'] = utils.readbytes(data, size=16, unsigned=True) / 100 # A
+        self.BATTERY_STATE['batteryState'] = utils.readbytes(data, size=8, unsigned=True)
+        self.BATTERY_STATE['voltage'] = utils.readbytes(data, size=16, unsigned=True) / 100 # V
 
     def process_MSP_VOLTAGE_METER_CONFIG(self, data):
         self.VOLTAGE_METER_CONFIGS = []
         if self.INAV:
             voltageMeterConfig = {}
-            voltageMeterConfig['vbatscale'] = self.readbytes(data, size=8, unsigned=True)/10
+            voltageMeterConfig['vbatscale'] = utils.readbytes(data, size=8, unsigned=True)/10
             self.VOLTAGE_METER_CONFIGS.append(voltageMeterConfig)
-            self.BATTERY_CONFIG['vbatmincellvoltage'] = self.readbytes(data, size=8, unsigned=True)/10
-            self.BATTERY_CONFIG['vbatmaxcellvoltage'] = self.readbytes(data, size=8, unsigned=True)/10
-            self.BATTERY_CONFIG['vbatwarningcellvoltage'] = self.readbytes(data, size=8, unsigned=True)/10
+            self.BATTERY_CONFIG['vbatmincellvoltage'] = utils.readbytes(data, size=8, unsigned=True)/10
+            self.BATTERY_CONFIG['vbatmaxcellvoltage'] = utils.readbytes(data, size=8, unsigned=True)/10
+            self.BATTERY_CONFIG['vbatwarningcellvoltage'] = utils.readbytes(data, size=8, unsigned=True)/10
         else:
-            voltage_meter_count = self.readbytes(data, size=8, unsigned=True)
+            voltage_meter_count = utils.readbytes(data, size=8, unsigned=True)
 
             for i in range(voltage_meter_count):
-                subframe_length = self.readbytes(data, size=8, unsigned=True)
+                subframe_length = utils.readbytes(data, size=8, unsigned=True)
                 if (subframe_length != 5):
                     for j in range(subframe_length):
-                        self.readbytes(data, size=8, unsigned=True)
+                        utils.readbytes(data, size=8, unsigned=True)
                 else:
                     voltageMeterConfig = {}
-                    voltageMeterConfig['id'] = self.readbytes(data, size=8, unsigned=True)
-                    voltageMeterConfig['sensorType'] = self.readbytes(data, size=8, unsigned=True)
-                    voltageMeterConfig['vbatscale'] = self.readbytes(data, size=8, unsigned=True)
-                    voltageMeterConfig['vbatresdivval'] = self.readbytes(data, size=8, unsigned=True)
-                    voltageMeterConfig['vbatresdivmultiplier'] = self.readbytes(data, size=8, unsigned=True)
+                    voltageMeterConfig['id'] = utils.readbytes(data, size=8, unsigned=True)
+                    voltageMeterConfig['sensorType'] = utils.readbytes(data, size=8, unsigned=True)
+                    voltageMeterConfig['vbatscale'] = utils.readbytes(data, size=8, unsigned=True)
+                    voltageMeterConfig['vbatresdivval'] = utils.readbytes(data, size=8, unsigned=True)
+                    voltageMeterConfig['vbatresdivmultiplier'] = utils.readbytes(data, size=8, unsigned=True)
 
                     self.VOLTAGE_METER_CONFIGS.append(voltageMeterConfig)
 
@@ -1769,75 +1642,75 @@ class MSPy:
         self.CURRENT_METER_CONFIGS = []
         if self.INAV:
             currentMeterConfig = {}
-            currentMeterConfig['scale'] = self.readbytes(data, size=16, unsigned=True)
-            currentMeterConfig['offset'] = self.readbytes(data, size=16, unsigned=True)
-            currentMeterConfig['sensorType'] = self.readbytes(data, size=8, unsigned=True)
+            currentMeterConfig['scale'] = utils.readbytes(data, size=16, unsigned=True)
+            currentMeterConfig['offset'] = utils.readbytes(data, size=16, unsigned=True)
+            currentMeterConfig['sensorType'] = utils.readbytes(data, size=8, unsigned=True)
             self.CURRENT_METER_CONFIGS.append(currentMeterConfig)
-            self.BATTERY_CONFIG['capacity'] = self.readbytes(data, size=16, unsigned=True)
+            self.BATTERY_CONFIG['capacity'] = utils.readbytes(data, size=16, unsigned=True)
         else:
-            current_meter_count = self.readbytes(data, size=8, unsigned=True)
+            current_meter_count = utils.readbytes(data, size=8, unsigned=True)
             for i in range(current_meter_count):
                 currentMeterConfig = {}
-                subframe_length = self.readbytes(data, size=8, unsigned=True)
+                subframe_length = utils.readbytes(data, size=8, unsigned=True)
 
                 if (subframe_length != 6):
                     for j in range(subframe_length):
-                        self.readbytes(data, size=8, unsigned=True)
+                        utils.readbytes(data, size=8, unsigned=True)
                 else:
-                    currentMeterConfig['id'] = self.readbytes(data, size=8, unsigned=True)
-                    currentMeterConfig['sensorType'] = self.readbytes(data, size=8, unsigned=True)
-                    currentMeterConfig['scale'] = self.readbytes(data, size=16, unsigned=False)
-                    currentMeterConfig['offset'] = self.readbytes(data, size=16, unsigned=False)
+                    currentMeterConfig['id'] = utils.readbytes(data, size=8, unsigned=True)
+                    currentMeterConfig['sensorType'] = utils.readbytes(data, size=8, unsigned=True)
+                    currentMeterConfig['scale'] = utils.readbytes(data, size=16, unsigned=False)
+                    currentMeterConfig['offset'] = utils.readbytes(data, size=16, unsigned=False)
 
                     self.CURRENT_METER_CONFIGS.append(currentMeterConfig)
 
     def process_MSP_BATTERY_CONFIG(self, data):
-        self.BATTERY_CONFIG['vbatmincellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
-        self.BATTERY_CONFIG['vbatmaxcellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
-        self.BATTERY_CONFIG['vbatwarningcellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
-        self.BATTERY_CONFIG['capacity'] = self.readbytes(data, size=16, unsigned=True)
-        self.BATTERY_CONFIG['voltageMeterSource'] = self.readbytes(data, size=8, unsigned=True)
-        self.BATTERY_CONFIG['currentMeterSource'] = self.readbytes(data, size=8, unsigned=True)
+        self.BATTERY_CONFIG['vbatmincellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+        self.BATTERY_CONFIG['vbatmaxcellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+        self.BATTERY_CONFIG['vbatwarningcellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+        self.BATTERY_CONFIG['capacity'] = utils.readbytes(data, size=16, unsigned=True)
+        self.BATTERY_CONFIG['voltageMeterSource'] = utils.readbytes(data, size=8, unsigned=True)
+        self.BATTERY_CONFIG['currentMeterSource'] = utils.readbytes(data, size=8, unsigned=True)
 
-        self.BATTERY_CONFIG['vbatmincellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-        self.BATTERY_CONFIG['vbatmaxcellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-        self.BATTERY_CONFIG['vbatwarningcellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
+        self.BATTERY_CONFIG['vbatmincellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+        self.BATTERY_CONFIG['vbatmaxcellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+        self.BATTERY_CONFIG['vbatwarningcellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
 
     def process_MSP_RC_TUNING(self, data):
-        self.RC_TUNING['RC_RATE'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-        self.RC_TUNING['RC_EXPO'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['RC_RATE'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['RC_EXPO'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
         self.RC_TUNING['roll_pitch_rate'] = 0
-        self.RC_TUNING['roll_rate'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-        self.RC_TUNING['pitch_rate'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['roll_rate'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['pitch_rate'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
-        self.RC_TUNING['yaw_rate'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-        self.RC_TUNING['dynamic_THR_PID'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-        self.RC_TUNING['throttle_MID'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-        self.RC_TUNING['throttle_EXPO'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['yaw_rate'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['dynamic_THR_PID'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['throttle_MID'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['throttle_EXPO'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
-        self.RC_TUNING['dynamic_THR_breakpoint'] = self.readbytes(data, size=16, unsigned=True)
+        self.RC_TUNING['dynamic_THR_breakpoint'] = utils.readbytes(data, size=16, unsigned=True)
 
-        self.RC_TUNING['RC_YAW_EXPO'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+        self.RC_TUNING['RC_YAW_EXPO'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
         if not self.INAV:
-            self.RC_TUNING['rcYawRate'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+            self.RC_TUNING['rcYawRate'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
-            self.RC_TUNING['rcPitchRate'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
-            self.RC_TUNING['RC_PITCH_EXPO'] = round((self.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+            self.RC_TUNING['rcPitchRate'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
+            self.RC_TUNING['RC_PITCH_EXPO'] = round((utils.readbytes(data, size=8, unsigned=True) / 100.0), 2)
 
-            self.RC_TUNING['throttleLimitType'] = self.readbytes(data, size=8, unsigned=True)
-            self.RC_TUNING['throttleLimitPercent'] = self.readbytes(data, size=8, unsigned=True)
+            self.RC_TUNING['throttleLimitType'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RC_TUNING['throttleLimitPercent'] = utils.readbytes(data, size=8, unsigned=True)
 
             if int("".join((self.CONFIG['apiVersion'].rsplit('.')))) >= 1420:
-                self.RC_TUNING['roll_rate_limit'] = self.readbytes(data, size=16, unsigned=True)
-                self.RC_TUNING['pitch_rate_limit'] = self.readbytes(data, size=16, unsigned=True)
-                self.RC_TUNING['yaw_rate_limit'] = self.readbytes(data, size=16, unsigned=True)
+                self.RC_TUNING['roll_rate_limit'] = utils.readbytes(data, size=16, unsigned=True)
+                self.RC_TUNING['pitch_rate_limit'] = utils.readbytes(data, size=16, unsigned=True)
+                self.RC_TUNING['yaw_rate_limit'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_PID(self, data):
         self.PIDs = [
             [
-                self.readbytes(data, size=8, unsigned=True) for _ in range(3)
+                utils.readbytes(data, size=8, unsigned=True) for _ in range(3)
             ] 
             for _ in range(int(len(data)/3))
         ]
@@ -1845,114 +1718,114 @@ class MSPy:
     def process_MSP2_PID(self, data):
         self.PIDs = [
             [
-                self.readbytes(data, size=8, unsigned=True) for _ in range(4)
+                utils.readbytes(data, size=8, unsigned=True) for _ in range(4)
             ] 
             for _ in range(int(len(data)/4))
         ]
 
     def process_MSP_ARMING_CONFIG(self, data):
-        self.ARMING_CONFIG['auto_disarm_delay'] = self.readbytes(data, size=8, unsigned=True)
-        self.ARMING_CONFIG['disarm_kill_switch'] = self.readbytes(data, size=8, unsigned=True)
+        self.ARMING_CONFIG['auto_disarm_delay'] = utils.readbytes(data, size=8, unsigned=True)
+        self.ARMING_CONFIG['disarm_kill_switch'] = utils.readbytes(data, size=8, unsigned=True)
         if not self.INAV:
-            self.ARMING_CONFIG['small_angle'] = self.readbytes(data, size=8, unsigned=True)
+            self.ARMING_CONFIG['small_angle'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_LOOP_TIME(self, data):
         if self.INAV:
-            self.FC_CONFIG['loopTime'] = self.readbytes(data, size=16, unsigned=True)
+            self.FC_CONFIG['loopTime'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_MISC(self, data): # 22 bytes
         if self.INAV:
-            self.MISC['midrc'] = self.RX_CONFIG['midrc'] = self.readbytes(data, size=16, unsigned=True)
-            self.MISC['minthrottle'] = self.MOTOR_CONFIG['minthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['maxthrottle'] = self.MOTOR_CONFIG['maxthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['mincommand'] = self.MOTOR_CONFIG['mincommand'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['failsafe_throttle'] = self.readbytes(data, size=16, unsigned=True) # 1000-2000
-            self.MISC['gps_type'] = self.GPS_CONFIG['provider'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['sensors_baudrate'] = self.MISC['gps_baudrate'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['gps_ubx_sbas'] = self.GPS_CONFIG['ublox_sbas'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['multiwiicurrentoutput'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['rssi_channel'] = self.RSSI_CONFIG['channel'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['placeholder2'] = self.readbytes(data, size=8, unsigned=True)
+            self.MISC['midrc'] = self.RX_CONFIG['midrc'] = utils.readbytes(data, size=16, unsigned=True)
+            self.MISC['minthrottle'] = self.MOTOR_CONFIG['minthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['maxthrottle'] = self.MOTOR_CONFIG['maxthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['mincommand'] = self.MOTOR_CONFIG['mincommand'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['failsafe_throttle'] = utils.readbytes(data, size=16, unsigned=True) # 1000-2000
+            self.MISC['gps_type'] = self.GPS_CONFIG['provider'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['sensors_baudrate'] = self.MISC['gps_baudrate'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['gps_ubx_sbas'] = self.GPS_CONFIG['ublox_sbas'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['multiwiicurrentoutput'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['rssi_channel'] = self.RSSI_CONFIG['channel'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['placeholder2'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.COMPASS_CONFIG['mag_declination'] = self.readbytes(data, size=16, unsigned=False) / 100 # -18000-18000
+            self.COMPASS_CONFIG['mag_declination'] = utils.readbytes(data, size=16, unsigned=False) / 100 # -18000-18000
             
             self.MISC['mag_declination'] = self.COMPASS_CONFIG['mag_declination']*10
 
-            self.MISC['vbatscale'] = self.readbytes(data, size=8, unsigned=True) # 10-200
-            self.MISC['vbatmincellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
-            self.MISC['vbatmaxcellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
-            self.MISC['vbatwarningcellvoltage'] = self.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+            self.MISC['vbatscale'] = utils.readbytes(data, size=8, unsigned=True) # 10-200
+            self.MISC['vbatmincellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+            self.MISC['vbatmaxcellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
+            self.MISC['vbatwarningcellvoltage'] = utils.readbytes(data, size=8, unsigned=True) / 10 # 10-50
 
     def process_MSPV2_INAV_MISC(self, data):
         if self.INAV:
-            self.MISC['midrc'] = self.RX_CONFIG['midrc'] = self.readbytes(data, size=16, unsigned=True)
-            self.MISC['minthrottle'] = self.MOTOR_CONFIG['minthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['maxthrottle'] = self.MOTOR_CONFIG['maxthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['mincommand'] = self.MOTOR_CONFIG['mincommand'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-            self.MISC['failsafe_throttle'] = self.readbytes(data, size=16, unsigned=True) # 1000-2000
-            self.MISC['gps_type'] = self.GPS_CONFIG['provider'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['sensors_baudrate'] = self.MISC['gps_baudrate'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['gps_ubx_sbas'] = self.GPS_CONFIG['ublox_sbas'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['rssi_channel'] = self.RSSI_CONFIG['channel'] = self.readbytes(data, size=8, unsigned=True)
+            self.MISC['midrc'] = self.RX_CONFIG['midrc'] = utils.readbytes(data, size=16, unsigned=True)
+            self.MISC['minthrottle'] = self.MOTOR_CONFIG['minthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['maxthrottle'] = self.MOTOR_CONFIG['maxthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['mincommand'] = self.MOTOR_CONFIG['mincommand'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+            self.MISC['failsafe_throttle'] = utils.readbytes(data, size=16, unsigned=True) # 1000-2000
+            self.MISC['gps_type'] = self.GPS_CONFIG['provider'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['sensors_baudrate'] = self.MISC['gps_baudrate'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['gps_ubx_sbas'] = self.GPS_CONFIG['ublox_sbas'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['rssi_channel'] = self.RSSI_CONFIG['channel'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.MISC['mag_declination'] = self.readbytes(data, size=16, unsigned=False) / 10 # -18000-18000
-            self.MISC['vbatscale'] = self.readbytes(data, size=16, unsigned=True)
-            self.MISC['voltage_source'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['battery_cells'] = self.readbytes(data, size=8, unsigned=True)
-            self.MISC['vbatdetectcellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-            self.MISC['vbatmincellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-            self.MISC['vbatmaxcellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-            self.MISC['vbatwarningcellvoltage'] = self.readbytes(data, size=16, unsigned=True) / 100
-            self.MISC['battery_capacity'] = self.readbytes(data, size=32, unsigned=True)
-            self.MISC['battery_capacity_warning'] = self.readbytes(data, size=32, unsigned=True)
-            self.MISC['battery_capacity_critical'] = self.readbytes(data, size=32, unsigned=True)
-            self.MISC['battery_capacity_unit'] = 'mWh' if self.readbytes(data, size=8, unsigned=True) else 'mAh'
+            self.MISC['mag_declination'] = utils.readbytes(data, size=16, unsigned=False) / 10 # -18000-18000
+            self.MISC['vbatscale'] = utils.readbytes(data, size=16, unsigned=True)
+            self.MISC['voltage_source'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['battery_cells'] = utils.readbytes(data, size=8, unsigned=True)
+            self.MISC['vbatdetectcellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+            self.MISC['vbatmincellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+            self.MISC['vbatmaxcellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+            self.MISC['vbatwarningcellvoltage'] = utils.readbytes(data, size=16, unsigned=True) / 100
+            self.MISC['battery_capacity'] = utils.readbytes(data, size=32, unsigned=True)
+            self.MISC['battery_capacity_warning'] = utils.readbytes(data, size=32, unsigned=True)
+            self.MISC['battery_capacity_critical'] = utils.readbytes(data, size=32, unsigned=True)
+            self.MISC['battery_capacity_unit'] = 'mWh' if utils.readbytes(data, size=8, unsigned=True) else 'mAh'
 
     def process_MSP_MOTOR_CONFIG(self, data):
-        self.MOTOR_CONFIG['minthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-        self.MOTOR_CONFIG['maxthrottle'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
-        self.MOTOR_CONFIG['mincommand'] = self.readbytes(data, size=16, unsigned=True) # 0-2000
+        self.MOTOR_CONFIG['minthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+        self.MOTOR_CONFIG['maxthrottle'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
+        self.MOTOR_CONFIG['mincommand'] = utils.readbytes(data, size=16, unsigned=True) # 0-2000
 
-        self.MOTOR_CONFIG['motor_count'] = self.readbytes(data, size=8, unsigned=True)
-        self.MOTOR_CONFIG['motor_poles'] = self.readbytes(data, size=8, unsigned=True)
-        self.MOTOR_CONFIG['use_dshot_telemetry'] = (self.readbytes(data, size=8, unsigned=True) != 0)
-        self.MOTOR_CONFIG['use_esc_sensor'] = (self.readbytes(data, size=8, unsigned=True) != 0)
+        self.MOTOR_CONFIG['motor_count'] = utils.readbytes(data, size=8, unsigned=True)
+        self.MOTOR_CONFIG['motor_poles'] = utils.readbytes(data, size=8, unsigned=True)
+        self.MOTOR_CONFIG['use_dshot_telemetry'] = (utils.readbytes(data, size=8, unsigned=True) != 0)
+        self.MOTOR_CONFIG['use_esc_sensor'] = (utils.readbytes(data, size=8, unsigned=True) != 0)
 
     def process_MSP_COMPASS_CONFIG(self, data):
-        self.COMPASS_CONFIG['mag_declination'] = self.readbytes(data, size=16, unsigned=False) / 100 # -18000-18000
+        self.COMPASS_CONFIG['mag_declination'] = utils.readbytes(data, size=16, unsigned=False) / 100 # -18000-18000
 
     def process_MSP_GPS_CONFIG(self, data):
-        self.GPS_CONFIG['provider'] = self.readbytes(data, size=8, unsigned=True)
-        self.GPS_CONFIG['ublox_sbas'] = self.readbytes(data, size=8, unsigned=True)
+        self.GPS_CONFIG['provider'] = utils.readbytes(data, size=8, unsigned=True)
+        self.GPS_CONFIG['ublox_sbas'] = utils.readbytes(data, size=8, unsigned=True)
         
-        self.GPS_CONFIG['auto_config'] = self.readbytes(data, size=8, unsigned=True)
-        self.GPS_CONFIG['auto_baud'] = self.readbytes(data, size=8, unsigned=True)
+        self.GPS_CONFIG['auto_config'] = utils.readbytes(data, size=8, unsigned=True)
+        self.GPS_CONFIG['auto_baud'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_GPS_RESCUE(self, data):
-        self.GPS_RESCUE['angle']             = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['initialAltitudeM']  = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['descentDistanceM']  = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['rescueGroundspeed'] = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['throttleMin']       = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['throttleMax']       = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['throttleHover']     = self.readbytes(data, size=16, unsigned=True)
-        self.GPS_RESCUE['sanityChecks']      = self.readbytes(data, size=8, unsigned=True)
-        self.GPS_RESCUE['minSats']           = self.readbytes(data, size=8, unsigned=True)
+        self.GPS_RESCUE['angle']             = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['initialAltitudeM']  = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['descentDistanceM']  = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['rescueGroundspeed'] = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['throttleMin']       = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['throttleMax']       = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['throttleHover']     = utils.readbytes(data, size=16, unsigned=True)
+        self.GPS_RESCUE['sanityChecks']      = utils.readbytes(data, size=8, unsigned=True)
+        self.GPS_RESCUE['minSats']           = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_RSSI_CONFIG(self, data):
-        self.RSSI_CONFIG['channel'] = self.readbytes(data, size=8, unsigned=True)
+        self.RSSI_CONFIG['channel'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_MOTOR_3D_CONFIG(self, data):
-        self.MOTOR_3D_CONFIG['deadband3d_low'] = self.readbytes(data, size=16, unsigned=True)
-        self.MOTOR_3D_CONFIG['deadband3d_high'] = self.readbytes(data, size=16, unsigned=True)
-        self.MOTOR_3D_CONFIG['neutral'] = self.readbytes(data, size=16, unsigned=True)
+        self.MOTOR_3D_CONFIG['deadband3d_low'] = utils.readbytes(data, size=16, unsigned=True)
+        self.MOTOR_3D_CONFIG['deadband3d_high'] = utils.readbytes(data, size=16, unsigned=True)
+        self.MOTOR_3D_CONFIG['neutral'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_BOXNAMES(self, data):
         self.AUX_CONFIG = [] # empty the array as new data is coming in
 
         buff = ""
         for i in range(len(data)):
-            char = self.readbytes(data, size=8, unsigned=True)
+            char = utils.readbytes(data, size=8, unsigned=True)
             if (char == 0x3B): # ; (delimeter char)
                 self.AUX_CONFIG.append(buff) # convert bytes into ASCII and save as strings
 
@@ -1966,7 +1839,7 @@ class MSPy:
 
         buff = ""
         for i in range(len(data)):
-            char = self.readbytes(data, size=8, unsigned=True)
+            char = utils.readbytes(data, size=8, unsigned=True)
             if (char == 0x3B):  # ; (delimeter char)
                 self.PIDNAMES.append(buff) # convert bytes into ASCII and save as strings
 
@@ -1979,42 +1852,42 @@ class MSPy:
         self.AUX_CONFIG_IDS = [] # empty the array as new data is coming in
 
         for i in range(len(data)):
-            self.AUX_CONFIG_IDS.append(self.readbytes(data, size=8, unsigned=True))
+            self.AUX_CONFIG_IDS.append(utils.readbytes(data, size=8, unsigned=True))
 
     def process_MSP_SERVO_CONFIGURATIONS(self, data):
         self.SERVO_CONFIG = [] # empty the array as new data is coming in
         if (len(data) % 12 == 0):
             for i in range(0, len(data), 12):
                 arr = {
-                    'min':                      self.readbytes(data, size=16, unsigned=True),
-                    'max':                      self.readbytes(data, size=16, unsigned=True),
-                    'middle':                   self.readbytes(data, size=16, unsigned=True),
-                    'rate':                     self.readbytes(data, size=8, unsigned=False),
-                    'indexOfChannelToForward':  self.readbytes(data, size=8, unsigned=True),
-                    'reversedInputSources':     self.readbytes(data, size=32, unsigned=True)
+                    'min':                      utils.readbytes(data, size=16, unsigned=True),
+                    'max':                      utils.readbytes(data, size=16, unsigned=True),
+                    'middle':                   utils.readbytes(data, size=16, unsigned=True),
+                    'rate':                     utils.readbytes(data, size=8, unsigned=False),
+                    'indexOfChannelToForward':  utils.readbytes(data, size=8, unsigned=True),
+                    'reversedInputSources':     utils.readbytes(data, size=32, unsigned=True)
                 }
 
                 self.SERVO_CONFIG.append(arr)
 
     def process_MSP_RC_DEADBAND(self, data):
-        self.RC_DEADBAND_CONFIG['deadband'] = self.readbytes(data, size=8, unsigned=True)
-        self.RC_DEADBAND_CONFIG['yaw_deadband'] = self.readbytes(data, size=8, unsigned=True)
-        self.RC_DEADBAND_CONFIG['alt_hold_deadband'] = self.readbytes(data, size=8, unsigned=True)
+        self.RC_DEADBAND_CONFIG['deadband'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RC_DEADBAND_CONFIG['yaw_deadband'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RC_DEADBAND_CONFIG['alt_hold_deadband'] = utils.readbytes(data, size=8, unsigned=True)
 
-        self.RC_DEADBAND_CONFIG['deadband3d_throttle'] = self.readbytes(data, size=16, unsigned=True)
+        self.RC_DEADBAND_CONFIG['deadband3d_throttle'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_SENSOR_ALIGNMENT(self, data):
-        self.SENSOR_ALIGNMENT['align_gyro'] = self.readbytes(data, size=8, unsigned=True)
-        self.SENSOR_ALIGNMENT['align_acc'] = self.readbytes(data, size=8, unsigned=True)
-        self.SENSOR_ALIGNMENT['align_mag'] = self.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_ALIGNMENT['align_gyro'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_ALIGNMENT['align_acc'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_ALIGNMENT['align_mag'] = utils.readbytes(data, size=8, unsigned=True)
 
         if self.INAV:
-            self.SENSOR_ALIGNMENT['align_opflow'] = self.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_ALIGNMENT['align_opflow'] = utils.readbytes(data, size=8, unsigned=True)
         else:
-            self.SENSOR_ALIGNMENT['gyro_detection_flags'] = self.readbytes(data, size=8, unsigned=True)
-            self.SENSOR_ALIGNMENT['gyro_to_use'] = self.readbytes(data, size=8, unsigned=True)
-            self.SENSOR_ALIGNMENT['gyro_1_align'] = self.readbytes(data, size=8, unsigned=True)
-            self.SENSOR_ALIGNMENT['gyro_2_align'] = self.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_ALIGNMENT['gyro_detection_flags'] = utils.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_ALIGNMENT['gyro_to_use'] = utils.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_ALIGNMENT['gyro_1_align'] = utils.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_ALIGNMENT['gyro_2_align'] = utils.readbytes(data, size=8, unsigned=True)
 
     # def process_MSP_DISPLAYPORT(self, data):
 
@@ -2068,52 +1941,52 @@ class MSPy:
         
     def process_MSP_DEBUG(self, data):
         for i in range(4):
-            self.SENSOR_DATA['debug'][i] = self.readbytes(data, size=16, unsigned=False)
+            self.SENSOR_DATA['debug'][i] = utils.readbytes(data, size=16, unsigned=False)
 
     def process_MSP2_INAV_DEBUG(self, data):
         for i in range(8):
-            self.SENSOR_DATA['debug'][i] = self.readbytes(data, size=32, unsigned=False)
+            self.SENSOR_DATA['debug'][i] = utils.readbytes(data, size=32, unsigned=False)
 
     def process_MSP_SET_MOTOR(self, data):
         logging.info('Motor Speeds Updated')
 
     def process_MSP_UID(self, data):
         for i in range(3):
-            self.CONFIG['uid'][i] = self.readbytes(data, size=32, unsigned=True)
+            self.CONFIG['uid'][i] = utils.readbytes(data, size=32, unsigned=True)
     
     def process_MSP_ACC_TRIM(self, data):
-        self.CONFIG['accelerometerTrims'][0] = self.readbytes(data, size=16, unsigned=False) # pitch
-        self.CONFIG['accelerometerTrims'][1] = self.readbytes(data, size=16, unsigned=False) # roll
+        self.CONFIG['accelerometerTrims'][0] = utils.readbytes(data, size=16, unsigned=False) # pitch
+        self.CONFIG['accelerometerTrims'][1] = utils.readbytes(data, size=16, unsigned=False) # roll
 
     def process_MSP_SET_ACC_TRIM(self, data):
         logging.info('Accelerometer trimms saved.')
 
     def process_MSP_GPS_SV_INFO(self, data):
         if (len(data) > 0):
-            numCh = self.readbytes(data, size=8, unsigned=True)
+            numCh = utils.readbytes(data, size=8, unsigned=True)
 
             for i in range(numCh):
-                self.GPS_DATA['chn'].append(self.readbytes(data, size=8, unsigned=True))
-                self.GPS_DATA['svid'].append(self.readbytes(data, size=8, unsigned=True))
-                self.GPS_DATA['quality'].append(self.readbytes(data, size=8, unsigned=True))
-                self.GPS_DATA['cno'].append(self.readbytes(data, size=8, unsigned=True))
+                self.GPS_DATA['chn'].append(utils.readbytes(data, size=8, unsigned=True))
+                self.GPS_DATA['svid'].append(utils.readbytes(data, size=8, unsigned=True))
+                self.GPS_DATA['quality'].append(utils.readbytes(data, size=8, unsigned=True))
+                self.GPS_DATA['cno'].append(utils.readbytes(data, size=8, unsigned=True))
 
     def process_MSP_RX_MAP(self, data):
         self.RC_MAP = [] # empty the array as new data is coming in
 
         for i in range(len(data)):
-            self.RC_MAP.append(self.readbytes(data, size=8, unsigned=True))
+            self.RC_MAP.append(utils.readbytes(data, size=8, unsigned=True))
 
     def process_MSP_SET_RX_MAP(self, data):
         logging.debug('RCMAP saved')
         
     def process_MSP_MIXER_CONFIG(self, data):
-        self.MIXER_CONFIG['mixer'] = self.readbytes(data, size=8, unsigned=True)
+        self.MIXER_CONFIG['mixer'] = utils.readbytes(data, size=8, unsigned=True)
         if not self.INAV:                    
-            self.MIXER_CONFIG['reverseMotorDir'] = self.readbytes(data, size=8, unsigned=True)
+            self.MIXER_CONFIG['reverseMotorDir'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_FEATURE_CONFIG(self, data):
-        self.FEATURE_CONFIG['featuremask']  = self.readbytes(data, size=32, unsigned=True)
+        self.FEATURE_CONFIG['featuremask']  = utils.readbytes(data, size=32, unsigned=True)
         for idx in range(32):
             enabled = self.bit_check(self.FEATURE_CONFIG['featuremask'], idx)
             if idx in self.FEATURE_CONFIG['features'].keys():
@@ -2122,73 +1995,73 @@ class MSPy:
                 self.FEATURE_CONFIG['features'][idx] = {'enabled': enabled}
 
     def process_MSP_BEEPER_CONFIG(self, data):
-        self.BEEPER_CONFIG['beepers'] = self.readbytes(data, size=32, unsigned=True)
+        self.BEEPER_CONFIG['beepers'] = utils.readbytes(data, size=32, unsigned=True)
             
-        self.BEEPER_CONFIG['dshotBeaconTone'] = self.readbytes(data, size=8, unsigned=True)
+        self.BEEPER_CONFIG['dshotBeaconTone'] = utils.readbytes(data, size=8, unsigned=True)
 
-        self.BEEPER_CONFIG['dshotBeaconConditions'] = self.readbytes(data, size=32, unsigned=True)
+        self.BEEPER_CONFIG['dshotBeaconConditions'] = utils.readbytes(data, size=32, unsigned=True)
 
     def process_MSP_BOARD_ALIGNMENT_CONFIG(self, data):
-        self.BOARD_ALIGNMENT_CONFIG['roll'] = self.readbytes(data, size=16, unsigned=False) # -180 - 360
-        self.BOARD_ALIGNMENT_CONFIG['pitch'] = self.readbytes(data, size=16, unsigned=False) # -180 - 360
-        self.BOARD_ALIGNMENT_CONFIG['yaw'] = self.readbytes(data, size=16, unsigned=False) # -180 - 360
+        self.BOARD_ALIGNMENT_CONFIG['roll'] = utils.readbytes(data, size=16, unsigned=False) # -180 - 360
+        self.BOARD_ALIGNMENT_CONFIG['pitch'] = utils.readbytes(data, size=16, unsigned=False) # -180 - 360
+        self.BOARD_ALIGNMENT_CONFIG['yaw'] = utils.readbytes(data, size=16, unsigned=False) # -180 - 360
 
     def process_MSP_SET_REBOOT(self, data):
-        rebootType = self.readbytes(data, size=8, unsigned=True)
+        rebootType = utils.readbytes(data, size=8, unsigned=True)
 
         if ((rebootType == self.REBOOT_TYPES['MSC']) or (rebootType == self.REBOOT_TYPES['MSC_UTC'])):
-            if (self.readbytes(data, size=8, unsigned=True) == 0):
+            if (utils.readbytes(data, size=8, unsigned=True) == 0):
                 logging.warning('Storage device not ready for reboot.')
 
         logging.info('Reboot request accepted')
 
     def process_MSP_API_VERSION(self, data):
-        self.CONFIG['mspProtocolVersion'] = self.readbytes(data, size=8, unsigned=True)
-        self.CONFIG['apiVersion'] = str(self.readbytes(data, size=8, unsigned=True)) + '.' + str(self.readbytes(data, size=8, unsigned=True)) + '.0'
+        self.CONFIG['mspProtocolVersion'] = utils.readbytes(data, size=8, unsigned=True)
+        self.CONFIG['apiVersion'] = str(utils.readbytes(data, size=8, unsigned=True)) + '.' + str(utils.readbytes(data, size=8, unsigned=True)) + '.0'
 
     def process_MSP_FC_VARIANT(self, data):
         identifier = ''
         for i in range(4):
-            identifier += chr(self.readbytes(data, size=8, unsigned=True))
+            identifier += chr(utils.readbytes(data, size=8, unsigned=True))
         self.CONFIG['flightControllerIdentifier'] = identifier
 
     def process_MSP_FC_VERSION(self, data):
-        self.CONFIG['flightControllerVersion'] =  str(self.readbytes(data, size=8, unsigned=True)) + '.'
-        self.CONFIG['flightControllerVersion'] += str(self.readbytes(data, size=8, unsigned=True)) + '.'
-        self.CONFIG['flightControllerVersion'] += str(self.readbytes(data, size=8, unsigned=True))
+        self.CONFIG['flightControllerVersion'] =  str(utils.readbytes(data, size=8, unsigned=True)) + '.'
+        self.CONFIG['flightControllerVersion'] += str(utils.readbytes(data, size=8, unsigned=True)) + '.'
+        self.CONFIG['flightControllerVersion'] += str(utils.readbytes(data, size=8, unsigned=True))
 
     def process_MSP_BUILD_INFO(self, data):
         dateLength = 11
         buff = []
         for i in range(dateLength):
-            buff.append(self.readbytes(data, size=8, unsigned=True))
+            buff.append(utils.readbytes(data, size=8, unsigned=True))
         
         buff.append(32) # ascii space
 
         timeLength = 8
         for i in range(timeLength):
-            buff.append(self.readbytes(data, size=8, unsigned=True))
+            buff.append(utils.readbytes(data, size=8, unsigned=True))
 
         self.CONFIG['buildInfo'] = bytearray(buff).decode("utf-8")
 
     def process_MSP_BOARD_INFO(self, data):
         identifier = ''
         for i in range(4):
-            identifier += chr(self.readbytes(data, size=8, unsigned=True))
+            identifier += chr(utils.readbytes(data, size=8, unsigned=True))
 
         self.CONFIG['boardIdentifier'] = identifier
-        self.CONFIG['boardVersion'] = self.readbytes(data, size=16, unsigned=True)
+        self.CONFIG['boardVersion'] = utils.readbytes(data, size=16, unsigned=True)
 
-        self.CONFIG['boardType'] = self.readbytes(data, size=8, unsigned=True)
+        self.CONFIG['boardType'] = utils.readbytes(data, size=8, unsigned=True)
 
         self.CONFIG['targetName'] = ""
 
-        self.CONFIG['commCapabilities'] = self.readbytes(data, size=8, unsigned=True)
+        self.CONFIG['commCapabilities'] = utils.readbytes(data, size=8, unsigned=True)
 
-        length = self.readbytes(data, size=8, unsigned=True)
+        length = utils.readbytes(data, size=8, unsigned=True)
         
         for i in range(length):
-            self.CONFIG['targetName'] += chr(self.readbytes(data, size=8, unsigned=True))
+            self.CONFIG['targetName'] += chr(utils.readbytes(data, size=8, unsigned=True))
 
         self.CONFIG['boardName'] = ""
         self.CONFIG['manufacturerId'] = ""
@@ -2197,24 +2070,24 @@ class MSPy:
         self.CONFIG['mcuTypeId'] = ""
 
         if data:
-            length = self.readbytes(data, size=8, unsigned=True)
+            length = utils.readbytes(data, size=8, unsigned=True)
             for i in range(length):
-                self.CONFIG['boardName'] += chr(self.readbytes(data, size=8, unsigned=True))
+                self.CONFIG['boardName'] += chr(utils.readbytes(data, size=8, unsigned=True))
 
-            length = self.readbytes(data, size=8, unsigned=True)
+            length = utils.readbytes(data, size=8, unsigned=True)
             for i in range(length):
-                self.CONFIG['manufacturerId'] += chr(self.readbytes(data, size=8, unsigned=True))
+                self.CONFIG['manufacturerId'] += chr(utils.readbytes(data, size=8, unsigned=True))
 
             for i in range(MSPy.SIGNATURE_LENGTH):
-                self.CONFIG['signature'].append(self.readbytes(data, size=8, unsigned=True))
+                self.CONFIG['signature'].append(utils.readbytes(data, size=8, unsigned=True))
 
-            self.CONFIG['mcuTypeId'] = self.readbytes(data, size=8, unsigned=True)
+            self.CONFIG['mcuTypeId'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_NAME(self, data):
         self.CONFIG['name'] = ''
     
         while len(data)>0:
-            char = self.readbytes(data, size=8, unsigned=True)
+            char = utils.readbytes(data, size=8, unsigned=True)
             self.CONFIG['name'] += chr(char)
 
     # def process_MSP_SET_CHANNEL_FORWARDING(self, data):
@@ -2227,12 +2100,12 @@ class MSPy:
 
         for i in range(serialPortCount):
             serialPort = {
-                'identifier': self.readbytes(data, size=8, unsigned=True),
-                'functions': self.serialPortFunctionMaskToFunctions(self.readbytes(data, size=16, unsigned=True)),
-                'msp_baudrate': self.BAUD_RATES[self.readbytes(data, size=8, unsigned=True)],
-                'gps_baudrate': self.BAUD_RATES[self.readbytes(data, size=8, unsigned=True)],
-                'telemetry_baudrate': self.BAUD_RATES[self.readbytes(data, size=8, unsigned=True)],
-                'blackbox_baudrate': self.BAUD_RATES[self.readbytes(data, size=8, unsigned=True)]
+                'identifier': utils.readbytes(data, size=8, unsigned=True),
+                'functions': self.serialPortFunctionMaskToFunctions(utils.readbytes(data, size=16, unsigned=True)),
+                'msp_baudrate': self.BAUD_RATES[utils.readbytes(data, size=8, unsigned=True)],
+                'gps_baudrate': self.BAUD_RATES[utils.readbytes(data, size=8, unsigned=True)],
+                'telemetry_baudrate': self.BAUD_RATES[utils.readbytes(data, size=8, unsigned=True)],
+                'blackbox_baudrate': self.BAUD_RATES[utils.readbytes(data, size=8, unsigned=True)]
             }
 
             self.SERIAL_CONFIG['ports'].append(serialPort)
@@ -2247,11 +2120,11 @@ class MSPy:
 
         for i in range(modeRangeCount):
             modeRange = {
-                'id': self.readbytes(data, size=8, unsigned=True),
-                'auxChannelIndex': self.readbytes(data, size=8, unsigned=True),
+                'id': utils.readbytes(data, size=8, unsigned=True),
+                'auxChannelIndex': utils.readbytes(data, size=8, unsigned=True),
                 'range': {
-                    'start': 900 + (self.readbytes(data, size=8, unsigned=True) * 25),
-                    'end': 900 + (self.readbytes(data, size=8, unsigned=True) * 25)
+                    'start': 900 + (utils.readbytes(data, size=8, unsigned=True) * 25),
+                    'end': 900 + (utils.readbytes(data, size=8, unsigned=True) * 25)
                             }
                 }
             self.MODE_RANGES.append(modeRange)
@@ -2259,13 +2132,13 @@ class MSPy:
     def process_MSP_MODE_RANGES_EXTRA(self, data):
         self.MODE_RANGES_EXTRA = [] # empty the array as new data is coming in
 
-        modeRangeExtraCount = self.readbytes(data, size=8, unsigned=True)
+        modeRangeExtraCount = utils.readbytes(data, size=8, unsigned=True)
 
         for i in range(modeRangeExtraCount):
             modeRangeExtra = {
-                'id': self.readbytes(data, size=8, unsigned=True),
-                'modeLogic': self.readbytes(data, size=8, unsigned=True),
-                'linkedTo': self.readbytes(data, size=8, unsigned=True)
+                'id': utils.readbytes(data, size=8, unsigned=True),
+                'modeLogic': utils.readbytes(data, size=8, unsigned=True),
+                'linkedTo': utils.readbytes(data, size=8, unsigned=True)
             }
             self.MODE_RANGES_EXTRA.append(modeRangeExtra)
 
@@ -2276,54 +2149,54 @@ class MSPy:
 
         for i in range(adjustmentRangeCount):
             adjustmentRange = {
-                'slotIndex': self.readbytes(data, size=8, unsigned=True),
-                'auxChannelIndex': self.readbytes(data, size=8, unsigned=True),
+                'slotIndex': utils.readbytes(data, size=8, unsigned=True),
+                'auxChannelIndex': utils.readbytes(data, size=8, unsigned=True),
                 'range': {
-                    'start': 900 + (self.readbytes(data, size=8, unsigned=True) * 25),
-                    'end': 900 + (self.readbytes(data, size=8, unsigned=True) * 25)
+                    'start': 900 + (utils.readbytes(data, size=8, unsigned=True) * 25),
+                    'end': 900 + (utils.readbytes(data, size=8, unsigned=True) * 25)
                 },
-                'adjustmentFunction': self.readbytes(data, size=8, unsigned=True),
-                'auxSwitchChannelIndex': self.readbytes(data, size=8, unsigned=True)
+                'adjustmentFunction': utils.readbytes(data, size=8, unsigned=True),
+                'auxSwitchChannelIndex': utils.readbytes(data, size=8, unsigned=True)
             }
             self.ADJUSTMENT_RANGES.append(adjustmentRange)
 
     def process_MSP_RX_CONFIG(self, data):
-        self.RX_CONFIG['serialrx_provider'] = self.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['serialrx_provider'] = utils.readbytes(data, size=8, unsigned=True)
         # maxcheck for INAV
-        self.RX_CONFIG['stick_max'] = self.readbytes(data, size=16, unsigned=True)
+        self.RX_CONFIG['stick_max'] = utils.readbytes(data, size=16, unsigned=True)
         # midrc for INAV
-        self.RX_CONFIG['stick_center'] = self.readbytes(data, size=16, unsigned=True)
+        self.RX_CONFIG['stick_center'] = utils.readbytes(data, size=16, unsigned=True)
         # mincheck for INAV
-        self.RX_CONFIG['stick_min'] = self.readbytes(data, size=16, unsigned=True)
-        self.RX_CONFIG['spektrum_sat_bind'] = self.readbytes(data, size=8, unsigned=True)
-        self.RX_CONFIG['rx_min_usec'] = self.readbytes(data, size=16, unsigned=True)
-        self.RX_CONFIG['rx_max_usec'] = self.readbytes(data, size=16, unsigned=True)
-        self.RX_CONFIG['rcInterpolation'] = self.readbytes(data, size=8, unsigned=True)
-        self.RX_CONFIG['rcInterpolationInterval'] = self.readbytes(data, size=8, unsigned=True)
-        self.RX_CONFIG['airModeActivateThreshold'] = self.readbytes(data, size=16, unsigned=True)  
+        self.RX_CONFIG['stick_min'] = utils.readbytes(data, size=16, unsigned=True)
+        self.RX_CONFIG['spektrum_sat_bind'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['rx_min_usec'] = utils.readbytes(data, size=16, unsigned=True)
+        self.RX_CONFIG['rx_max_usec'] = utils.readbytes(data, size=16, unsigned=True)
+        self.RX_CONFIG['rcInterpolation'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['rcInterpolationInterval'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['airModeActivateThreshold'] = utils.readbytes(data, size=16, unsigned=True)  
         # spirx_protocol for INAV
-        self.RX_CONFIG['rxSpiProtocol'] = self.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['rxSpiProtocol'] = utils.readbytes(data, size=8, unsigned=True)
         # spirx_id for INAV
-        self.RX_CONFIG['rxSpiId'] = self.readbytes(data, size=32, unsigned=True)
+        self.RX_CONFIG['rxSpiId'] = utils.readbytes(data, size=32, unsigned=True)
         # spirx_channel_count for INAV
-        self.RX_CONFIG['rxSpiRfChannelCount'] = self.readbytes(data, size=8, unsigned=True)
-        self.RX_CONFIG['fpvCamAngleDegrees'] = self.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['rxSpiRfChannelCount'] = utils.readbytes(data, size=8, unsigned=True)
+        self.RX_CONFIG['fpvCamAngleDegrees'] = utils.readbytes(data, size=8, unsigned=True)
         if self.INAV:
-            self.RX_CONFIG['receiver_type'] = self.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['receiver_type'] = utils.readbytes(data, size=8, unsigned=True)
         else:
-            self.RX_CONFIG['rcInterpolationChannels'] = self.readbytes(data, size=8, unsigned=True)
-            self.RX_CONFIG['rcSmoothingType'] = self.readbytes(data, size=8, unsigned=True)
-            self.RX_CONFIG['rcSmoothingInputCutoff'] = self.readbytes(data, size=8, unsigned=True)
-            self.RX_CONFIG['rcSmoothingDerivativeCutoff'] = self.readbytes(data, size=8, unsigned=True)
-            self.RX_CONFIG['rcSmoothingInputType'] = self.readbytes(data, size=8, unsigned=True)
-            self.RX_CONFIG['rcSmoothingDerivativeType'] = self.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcInterpolationChannels'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcSmoothingType'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcSmoothingInputCutoff'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcSmoothingDerivativeCutoff'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcSmoothingInputType'] = utils.readbytes(data, size=8, unsigned=True)
+            self.RX_CONFIG['rcSmoothingDerivativeType'] = utils.readbytes(data, size=8, unsigned=True)
     def process_MSP_FAILSAFE_CONFIG(self, data):
-        self.FAILSAFE_CONFIG['failsafe_delay'] = self.readbytes(data, size=8, unsigned=True)
-        self.FAILSAFE_CONFIG['failsafe_off_delay'] = self.readbytes(data, size=8, unsigned=True)
-        self.FAILSAFE_CONFIG['failsafe_throttle'] = self.readbytes(data, size=16, unsigned=True)
-        self.FAILSAFE_CONFIG['failsafe_switch_mode'] = self.readbytes(data, size=8, unsigned=True)
-        self.FAILSAFE_CONFIG['failsafe_throttle_low_delay'] = self.readbytes(data, size=16, unsigned=True)
-        self.FAILSAFE_CONFIG['failsafe_procedure'] = self.readbytes(data, size=8, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_delay'] = utils.readbytes(data, size=8, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_off_delay'] = utils.readbytes(data, size=8, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_throttle'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_switch_mode'] = utils.readbytes(data, size=8, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_throttle_low_delay'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FAILSAFE_CONFIG['failsafe_procedure'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_RXFAIL_CONFIG(self, data):
         self.RXFAIL_CONFIG = [] # empty the array as new data is coming in
@@ -2331,150 +2204,150 @@ class MSPy:
         channelCount = int(len(data) / 3)
         for i in range(channelCount):
             rxfailChannel = {
-                'mode':  self.readbytes(data, size=8, unsigned=True),
-                'value': self.readbytes(data, size=16, unsigned=True)
+                'mode':  utils.readbytes(data, size=8, unsigned=True),
+                'value': utils.readbytes(data, size=16, unsigned=True)
             }
             self.RXFAIL_CONFIG.append(rxfailChannel)
 
     def process_MSP_ADVANCED_CONFIG(self, data):
-        self.PID_ADVANCED_CONFIG['gyro_sync_denom'] = self.readbytes(data, size=8, unsigned=True)
-        self.PID_ADVANCED_CONFIG['pid_process_denom'] = self.readbytes(data, size=8, unsigned=True)
-        self.PID_ADVANCED_CONFIG['use_unsyncedPwm'] = self.readbytes(data, size=8, unsigned=True)
-        self.PID_ADVANCED_CONFIG['fast_pwm_protocol'] = self.readbytes(data, size=8, unsigned=True)
-        self.PID_ADVANCED_CONFIG['motor_pwm_rate'] = self.readbytes(data, size=16, unsigned=True)
+        self.PID_ADVANCED_CONFIG['gyro_sync_denom'] = utils.readbytes(data, size=8, unsigned=True)
+        self.PID_ADVANCED_CONFIG['pid_process_denom'] = utils.readbytes(data, size=8, unsigned=True)
+        self.PID_ADVANCED_CONFIG['use_unsyncedPwm'] = utils.readbytes(data, size=8, unsigned=True)
+        self.PID_ADVANCED_CONFIG['fast_pwm_protocol'] = utils.readbytes(data, size=8, unsigned=True)
+        self.PID_ADVANCED_CONFIG['motor_pwm_rate'] = utils.readbytes(data, size=16, unsigned=True)
 
-        self.PID_ADVANCED_CONFIG['digitalIdlePercent'] = self.readbytes(data, size=16, unsigned=True) / 100
+        self.PID_ADVANCED_CONFIG['digitalIdlePercent'] = utils.readbytes(data, size=16, unsigned=True) / 100
 
     def process_MSP_FILTER_CONFIG(self, data):
-        self.FILTER_CONFIG['gyro_lowpass_hz'] = self.readbytes(data, size=8, unsigned=True)
-        self.FILTER_CONFIG['dterm_lowpass_hz'] = self.readbytes(data, size=16, unsigned=True)
-        self.FILTER_CONFIG['yaw_lowpass_hz'] = self.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['gyro_lowpass_hz'] = utils.readbytes(data, size=8, unsigned=True)
+        self.FILTER_CONFIG['dterm_lowpass_hz'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['yaw_lowpass_hz'] = utils.readbytes(data, size=16, unsigned=True)
         
-        self.FILTER_CONFIG['gyro_notch_hz'] = self.readbytes(data, size=16, unsigned=True)
-        self.FILTER_CONFIG['gyro_notch_cutoff'] = self.readbytes(data, size=16, unsigned=True)
-        self.FILTER_CONFIG['dterm_notch_hz'] = self.readbytes(data, size=16, unsigned=True)
-        self.FILTER_CONFIG['dterm_notch_cutoff'] = self.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['gyro_notch_hz'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['gyro_notch_cutoff'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['dterm_notch_hz'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['dterm_notch_cutoff'] = utils.readbytes(data, size=16, unsigned=True)
 
-        self.FILTER_CONFIG['gyro_notch2_hz'] = self.readbytes(data, size=16, unsigned=True)
-        self.FILTER_CONFIG['gyro_notch2_cutoff'] = self.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['gyro_notch2_hz'] = utils.readbytes(data, size=16, unsigned=True)
+        self.FILTER_CONFIG['gyro_notch2_cutoff'] = utils.readbytes(data, size=16, unsigned=True)
 
         if not self.INAV:
-            self.FILTER_CONFIG['dterm_lowpass_type'] = self.readbytes(data, size=8, unsigned=True)
+            self.FILTER_CONFIG['dterm_lowpass_type'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.FILTER_CONFIG['gyro_hardware_lpf'] = self.readbytes(data, size=8, unsigned=True)
+            self.FILTER_CONFIG['gyro_hardware_lpf'] = utils.readbytes(data, size=8, unsigned=True)
             
-            self.readbytes(data, size=8, unsigned=True) # must consume this byte
+            utils.readbytes(data, size=8, unsigned=True) # must consume this byte
 
-            self.FILTER_CONFIG['gyro_lowpass_hz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['gyro_lowpass2_hz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['gyro_lowpass_type'] = self.readbytes(data, size=8, unsigned=True)
-            self.FILTER_CONFIG['gyro_lowpass2_type'] = self.readbytes(data, size=8, unsigned=True)
-            self.FILTER_CONFIG['dterm_lowpass2_hz'] = self.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass_hz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass2_hz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass_type'] = utils.readbytes(data, size=8, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass2_type'] = utils.readbytes(data, size=8, unsigned=True)
+            self.FILTER_CONFIG['dterm_lowpass2_hz'] = utils.readbytes(data, size=16, unsigned=True)
 
             self.FILTER_CONFIG['gyro_32khz_hardware_lpf'] = 0
 
-            self.FILTER_CONFIG['dterm_lowpass2_type'] = self.readbytes(data, size=8, unsigned=True)
-            self.FILTER_CONFIG['gyro_lowpass_dyn_min_hz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['gyro_lowpass_dyn_max_hz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['dterm_lowpass_dyn_min_hz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['dterm_lowpass_dyn_max_hz'] = self.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['dterm_lowpass2_type'] = utils.readbytes(data, size=8, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass_dyn_min_hz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['gyro_lowpass_dyn_max_hz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['dterm_lowpass_dyn_min_hz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['dterm_lowpass_dyn_max_hz'] = utils.readbytes(data, size=16, unsigned=True)
         else:
-            self.FILTER_CONFIG['accNotchHz'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['accNotchCutoff'] = self.readbytes(data, size=16, unsigned=True)
-            self.FILTER_CONFIG['gyroStage2LowpassHz'] = self.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['accNotchHz'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['accNotchCutoff'] = utils.readbytes(data, size=16, unsigned=True)
+            self.FILTER_CONFIG['gyroStage2LowpassHz'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_SET_PID_ADVANCED(self, data):
         logging.info("Advanced PID settings saved")
 
     def process_MSP_PID_ADVANCED(self, data):
-        self.ADVANCED_TUNING['rollPitchItermIgnoreRate'] = self.readbytes(data, size=16, unsigned=True)
-        self.ADVANCED_TUNING['yawItermIgnoreRate'] = self.readbytes(data, size=16, unsigned=True)
-        self.ADVANCED_TUNING['yaw_p_limit'] = self.readbytes(data, size=16, unsigned=True)
-        self.ADVANCED_TUNING['deltaMethod'] = self.readbytes(data, size=8, unsigned=True)
-        self.ADVANCED_TUNING['vbatPidCompensation'] = self.readbytes(data, size=8, unsigned=True)
+        self.ADVANCED_TUNING['rollPitchItermIgnoreRate'] = utils.readbytes(data, size=16, unsigned=True)
+        self.ADVANCED_TUNING['yawItermIgnoreRate'] = utils.readbytes(data, size=16, unsigned=True)
+        self.ADVANCED_TUNING['yaw_p_limit'] = utils.readbytes(data, size=16, unsigned=True)
+        self.ADVANCED_TUNING['deltaMethod'] = utils.readbytes(data, size=8, unsigned=True)
+        self.ADVANCED_TUNING['vbatPidCompensation'] = utils.readbytes(data, size=8, unsigned=True)
         if not self.INAV:
-            self.ADVANCED_TUNING['feedforwardTransition'] = self.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['feedforwardTransition'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.ADVANCED_TUNING['dtermSetpointWeight'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['toleranceBand'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['toleranceBandReduction'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['itermThrottleGain'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['pidMaxVelocity'] = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['pidMaxVelocityYaw'] = self.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['dtermSetpointWeight'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['toleranceBand'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['toleranceBandReduction'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['itermThrottleGain'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['pidMaxVelocity'] = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['pidMaxVelocityYaw'] = utils.readbytes(data, size=16, unsigned=True)
 
-            self.ADVANCED_TUNING['levelAngleLimit'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['levelSensitivity'] = self.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['levelAngleLimit'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['levelSensitivity'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.ADVANCED_TUNING['itermThrottleThreshold'] = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['itermAcceleratorGain'] = self.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['itermThrottleThreshold'] = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['itermAcceleratorGain'] = utils.readbytes(data, size=16, unsigned=True)
 
-            self.ADVANCED_TUNING['dtermSetpointWeight'] = self.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['dtermSetpointWeight'] = utils.readbytes(data, size=16, unsigned=True)
 
-            self.ADVANCED_TUNING['itermRotation'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['smartFeedforward'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['itermRelax'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['itermRelaxType'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['absoluteControlGain'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['throttleBoost'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['acroTrainerAngleLimit'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['feedforwardRoll']  = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['feedforwardPitch'] = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['feedforwardYaw']   = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['antiGravityMode']  = self.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['itermRotation'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['smartFeedforward'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['itermRelax'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['itermRelaxType'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['absoluteControlGain'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['throttleBoost'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['acroTrainerAngleLimit'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['feedforwardRoll']  = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['feedforwardPitch'] = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['feedforwardYaw']   = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['antiGravityMode']  = utils.readbytes(data, size=8, unsigned=True)
 
-            self.ADVANCED_TUNING['dMinRoll'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['dMinPitch'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['dMinYaw'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['dMinGain'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['dMinAdvance'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['useIntegratedYaw'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['integratedYawRelax'] = self.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dMinRoll'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dMinPitch'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dMinYaw'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dMinGain'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dMinAdvance'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['useIntegratedYaw'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['integratedYawRelax'] = utils.readbytes(data, size=8, unsigned=True)
         else:
-            self.ADVANCED_TUNING['setpointRelaxRatio'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['dtermSetpointWeight'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['pidSumLimit'] = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['itermThrottleGain'] = self.readbytes(data, size=8, unsigned=True)
-            self.ADVANCED_TUNING['axisAccelerationLimitRollPitch'] = self.readbytes(data, size=16, unsigned=True)
-            self.ADVANCED_TUNING['axisAccelerationLimitYaw'] = self.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['setpointRelaxRatio'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['dtermSetpointWeight'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['pidSumLimit'] = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['itermThrottleGain'] = utils.readbytes(data, size=8, unsigned=True)
+            self.ADVANCED_TUNING['axisAccelerationLimitRollPitch'] = utils.readbytes(data, size=16, unsigned=True)
+            self.ADVANCED_TUNING['axisAccelerationLimitYaw'] = utils.readbytes(data, size=16, unsigned=True)
 
     def process_MSP_SENSOR_CONFIG(self, data):
-        self.SENSOR_CONFIG['acc_hardware'] = self.readbytes(data, size=8, unsigned=True)
-        self.SENSOR_CONFIG['baro_hardware'] = self.readbytes(data, size=8, unsigned=True)
-        self.SENSOR_CONFIG['mag_hardware'] = self.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_CONFIG['acc_hardware'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_CONFIG['baro_hardware'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SENSOR_CONFIG['mag_hardware'] = utils.readbytes(data, size=8, unsigned=True)
         if self.INAV:
-            self.SENSOR_CONFIG['pitot'] = self.readbytes(data, size=8, unsigned=True)
-            self.SENSOR_CONFIG['rangefinder'] = self.readbytes(data, size=8, unsigned=True)
-            self.SENSOR_CONFIG['opflow'] = self.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_CONFIG['pitot'] = utils.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_CONFIG['rangefinder'] = utils.readbytes(data, size=8, unsigned=True)
+            self.SENSOR_CONFIG['opflow'] = utils.readbytes(data, size=8, unsigned=True)
 
     def process_MSP_DATAFLASH_SUMMARY(self, data):
-        flags = self.readbytes(data, size=8, unsigned=True)
+        flags = utils.readbytes(data, size=8, unsigned=True)
         self.DATAFLASH['ready'] = ((flags & 1) != 0)
         self.DATAFLASH['supported'] = ((flags & 2) != 0)
-        self.DATAFLASH['sectors'] = self.readbytes(data, size=32, unsigned=True)
-        self.DATAFLASH['totalSize'] = self.readbytes(data, size=32, unsigned=True)
-        self.DATAFLASH['usedSize'] = self.readbytes(data, size=32, unsigned=True)
+        self.DATAFLASH['sectors'] = utils.readbytes(data, size=32, unsigned=True)
+        self.DATAFLASH['totalSize'] = utils.readbytes(data, size=32, unsigned=True)
+        self.DATAFLASH['usedSize'] = utils.readbytes(data, size=32, unsigned=True)
         # update_dataflash_global();
 
     def process_MSP_DATAFLASH_ERASE(self, data):
         logging.info("Data flash erase begun...")
 
     def process_MSP_SDCARD_SUMMARY(self, data):
-        flags = self.readbytes(data, size=8, unsigned=True)
+        flags = utils.readbytes(data, size=8, unsigned=True)
 
         self.SDCARD['supported'] = ((flags & 0x01) != 0)
-        self.SDCARD['state'] = self.readbytes(data, size=8, unsigned=True)
-        self.SDCARD['filesystemLastError'] = self.readbytes(data, size=8, unsigned=True)
-        self.SDCARD['freeSizeKB'] = self.readbytes(data, size=32, unsigned=True)
-        self.SDCARD['totalSizeKB'] = self.readbytes(data, size=32, unsigned=True)
+        self.SDCARD['state'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SDCARD['filesystemLastError'] = utils.readbytes(data, size=8, unsigned=True)
+        self.SDCARD['freeSizeKB'] = utils.readbytes(data, size=32, unsigned=True)
+        self.SDCARD['totalSizeKB'] = utils.readbytes(data, size=32, unsigned=True)
 
     def process_MSP_BLACKBOX_CONFIG(self, data):
         if not self.INAV:
-            self.BLACKBOX['supported'] = (self.readbytes(data, size=8, unsigned=True) & 1) != 0
-            self.BLACKBOX['blackboxDevice'] = self.readbytes(data, size=8, unsigned=True)
-            self.BLACKBOX['blackboxRateNum'] = self.readbytes(data, size=8, unsigned=True)
-            self.BLACKBOX['blackboxRateDenom'] = self.readbytes(data, size=8, unsigned=True)
+            self.BLACKBOX['supported'] = (utils.readbytes(data, size=8, unsigned=True) & 1) != 0
+            self.BLACKBOX['blackboxDevice'] = utils.readbytes(data, size=8, unsigned=True)
+            self.BLACKBOX['blackboxRateNum'] = utils.readbytes(data, size=8, unsigned=True)
+            self.BLACKBOX['blackboxRateDenom'] = utils.readbytes(data, size=8, unsigned=True)
 
-            self.BLACKBOX['blackboxPDenom'] = self.readbytes(data, size=16, unsigned=True)
+            self.BLACKBOX['blackboxPDenom'] = utils.readbytes(data, size=16, unsigned=True)
         else:
             pass # API no longer supported (INAV 2.3.0)
     def process_MSP_SET_BLACKBOX_CONFIG(self, data):
@@ -2484,7 +2357,7 @@ class MSPy:
     # def process_MSP_TRANSPONDER_CONFIG(self, data):
     #     bytesRemaining = len(data)
 
-    #     providerCount = self.readbytes(data, size=8, unsigned=True)
+    #     providerCount = utils.readbytes(data, size=8, unsigned=True)
     #     bytesRemaining-=1
 
     #     self.TRANSPONDER['supported'] = providerCount > 0
@@ -2492,19 +2365,19 @@ class MSPy:
 
     #     for i in range(providerCount):
     #         provider = {
-    #             'id': self.readbytes(data, size=8, unsigned=True),
-    #             'dataLength': self.readbytes(data, size=8, unsigned=True)
+    #             'id': utils.readbytes(data, size=8, unsigned=True),
+    #             'dataLength': utils.readbytes(data, size=8, unsigned=True)
     #         }
     #         bytesRemaining -= 2
 
     #         self.TRANSPONDER['providers'].append(provider)
 
-    #     self.TRANSPONDER['provider'] = self.readbytes(data, size=8, unsigned=True)
+    #     self.TRANSPONDER['provider'] = utils.readbytes(data, size=8, unsigned=True)
     #     bytesRemaining-=1
 
     #     self.TRANSPONDER['data'] = []
     #     for i in range(bytesRemaining):
-    #         self.TRANSPONDER['data'].append(self.readbytes(data, size=8, unsigned=True))
+    #         self.TRANSPONDER['data'].append(utils.readbytes(data, size=8, unsigned=True))
 
     def process_MSP_SET_TRANSPONDER_CONFIG(self, data):
         logging.info("Transponder config saved")
@@ -2519,7 +2392,7 @@ class MSPy:
         logging.info('Board alignment saved')
         
     def process_MSP_PID_CONTROLLER(self, data):
-        self.PID['controller'] = self.readbytes(data, size=8, unsigned=True)
+        self.PID['controller'] = utils.readbytes(data, size=8, unsigned=True)
         
     def process_MSP_SET_PID_CONTROLLER(self, data):
         logging.info('PID controller changed')
